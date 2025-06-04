@@ -1,0 +1,28 @@
+# FastAPI y servidor
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+
+# Base de datos
+sqlalchemy==2.0.23
+pymysql==1.1.0
+cryptography==41.0.7
+
+# Validación y configuración
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# Procesamiento de imágenes
+opencv-python==4.8.1.78
+numpy==1.24.3
+Pillow==10.1.0
+
+# Utilidades
+python-multipart==0.0.6
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# Logging y monitoreo
+python-json-logger==2.0.7
+
+# Para compatibilidad con el código existente
+matplotlib==3.7.2
