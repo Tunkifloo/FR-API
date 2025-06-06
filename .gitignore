@@ -1,4 +1,7 @@
 # Directorios de datos
+json_backup
+temp
+test_images
 uploads/
 models/
 exports/

@@ -169,7 +169,7 @@ JSON_BACKUP_DIR=json_backup
 ### **Configuración de Umbrales**
 El sistema permite ajustar la sensibilidad del reconocimiento:
 - **0.60-0.70**: Muy permisivo (más falsos positivos)
-- **0.75**: Balanceado (por defecto)
+- **0.75**: Balanceado (ACTUAL 0.60)
 - **0.80-0.90**: Muy estricto (más falsos negativos)
 
 ## 📊 Monitoreo y Logging

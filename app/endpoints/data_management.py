@@ -12,6 +12,24 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def serialize_datetime(obj):
+    """Función helper para serializar objetos datetime"""
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+
+
+def prepare_person_for_export(person_data: dict) -> dict:
+    """Preparar datos de persona para exportación JSON"""
+    person_copy = person_data.copy()
+
+    # Convertir datetime a string ISO
+    if 'fecha_registro' in person_copy and isinstance(person_copy['fecha_registro'], datetime):
+        person_copy['fecha_registro'] = person_copy['fecha_registro'].isoformat()
+
+    return person_copy
+
+
 @router.get("/export/all")
 async def export_all_data():
     """Exportar todos los datos a JSON"""
@@ -27,7 +45,7 @@ async def export_all_data():
                 SELECT p.*, c.caracteristicas_json, c.umbral_similitud, c.metodo
                 FROM PERSONAS p
                          LEFT JOIN CARACTERISTICAS_FACIALES c ON p.ID = c.persona_id
-                WHERE p.activo = TRUE \
+                WHERE p.activo = TRUE
                 """
 
         cursor.execute(query)
@@ -62,7 +80,7 @@ async def export_all_data():
                 'fecha_registro': result[7].isoformat() if result[7] else None,
                 'activo': bool(result[8]),
                 'caracteristicas': json.loads(result[9]) if result[9] else None,
-                'umbral_similitud': float(result[10]) if result[10] else 0.75,
+                'umbral_similitud': float(result[10]) if result[10] else 0.60,
                 'metodo': result[11] if result[11] else 'opencv_tradicional'
             }
             export_data['personas'].append(person_data)
@@ -75,7 +93,7 @@ async def export_all_data():
         filename = f"exports/exportacion_completa_{timestamp}.json"
 
         with open(filename, 'w', encoding='utf-8') as f:
-            json.dump(export_data, f, indent=2, ensure_ascii=False)
+            json.dump(export_data, f, indent=2, ensure_ascii=False, default=serialize_datetime)
 
         return {
             "message": "Exportación completada exitosamente",
@@ -99,6 +117,9 @@ async def export_person_by_email(email: str):
         if not person:
             raise HTTPException(status_code=404, detail="Persona no encontrada")
 
+        # Preparar datos para exportación (convertir datetime)
+        person_prepared = prepare_person_for_export(person)
+
         # Crear estructura de exportación individual
         export_data = {
             'metadata': {
@@ -106,7 +127,7 @@ async def export_person_by_email(email: str):
                 'tipo': 'persona_individual',
                 'base_datos': 'MySQL'
             },
-            'persona': person
+            'persona': person_prepared
         }
 
         # Crear directorio de exportación
@@ -117,7 +138,7 @@ async def export_person_by_email(email: str):
         filename = f"exports/persona_{person['pk']}_{timestamp}.json"
 
         with open(filename, 'w', encoding='utf-8') as f:
-            json.dump(export_data, f, indent=2, ensure_ascii=False)
+            json.dump(export_data, f, indent=2, ensure_ascii=False, default=serialize_datetime)
 
         return {
             "message": "Persona exportada exitosamente",
