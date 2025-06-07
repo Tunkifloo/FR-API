@@ -6,6 +6,7 @@ from app.database.connection import get_db_connection, init_database
 from app.endpoints import admin, data_management, persons, recognition
 from app.core.utils import configure_logging, create_directories
 from config import settings
+import os
 import logging
 
 # Configurar logging
@@ -266,6 +267,28 @@ async def system_info():
         logger.error(f"Error obteniendo información del sistema: {e}")
         raise HTTPException(status_code=500, detail="Error obteniendo información del sistema")
 
+# Configuración específica para Railway
+@app.get("/railway-health")
+async def railway_health():
+    """Health check específico para Railway"""
+    try:
+        connection = await get_db_connection()
+        if connection:
+            connection.close()
+            return {"status": "healthy", "railway": True}
+        return {"status": "degraded", "railway": True}
+    except Exception as e:
+        return {"status": "unhealthy", "error": str(e), "railway": True}
+
+if __name__ == "__main__":
+    # Para Railway, usar puerto dinámico
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=port,
+        reload=False  # Importante: False en producción
+    )
 
 if __name__ == "__main__":
     print("🚀 Iniciando Sistema de Reconocimiento Facial Mejorado")

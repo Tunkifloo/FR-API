@@ -1,0 +1,13 @@
+.git
+.env
+.env.example
+__pycache__/
+*.pyc
+.pytest_cache/
+test_images/
+temp/
+logs/
+*.log
+node_modules/
+.DS_Store
+Thumbs.db
