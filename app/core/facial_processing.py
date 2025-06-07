@@ -2,7 +2,11 @@ import cv2
 import numpy as np
 from typing import Tuple, Optional, List
 import logging
+import os
 from config import settings
+from app.core.face_detection_dnn import DNNFaceDetector
+from app.core.face_embeddings import FaceEmbeddingExtractor
+from app.core.advanced_features import AdvancedFeatureExtractor
 
 # Solo importar sklearn si está disponible
 try:
@@ -29,6 +33,18 @@ class FacialProcessor:
             cv2.data.haarcascades + 'haarcascade_profileface.xml'
         )
 
+        # Inicializar detectores adicionales
+        self.dnn_detector = None
+        if settings.USE_DNN_DETECTION:
+            self.dnn_detector = DNNFaceDetector()
+
+        # Inicializar extractores avanzados
+        self.embedding_extractor = None
+        if settings.USE_FACE_EMBEDDINGS:
+            self.embedding_extractor = FaceEmbeddingExtractor()
+
+        self.advanced_extractor = AdvancedFeatureExtractor()
+
         # dlib no se usa más para evitar problemas de instalación
         self.use_dlib = False
 
@@ -36,6 +52,8 @@ class FacialProcessor:
         self.enhanced_mode = getattr(settings, 'USE_ENHANCED_PROCESSING', True)
 
         logger.info(f"FacialProcessor inicializado - Modo mejorado: {self.enhanced_mode}")
+        logger.info(f"DNN Detection: {settings.USE_DNN_DETECTION}")
+        logger.info(f"Face Embeddings: {settings.USE_FACE_EMBEDDINGS}")
 
     def process_image(self, image_path: str) -> Optional[np.ndarray]:
         """Procesar imagen básico (compatibilidad hacia atrás)"""
@@ -43,6 +61,77 @@ class FacialProcessor:
             return self.preprocess_image(image_path)
         else:
             return self._process_image_basic(image_path)
+
+    def detect_faces_hybrid(self, image: np.ndarray) -> List[Tuple[int, int, int, int]]:
+        """Detección híbrida usando múltiples métodos"""
+        all_faces = []
+
+        # 1. Intentar con DNN primero (más preciso)
+        if self.dnn_detector:
+            dnn_faces = self.dnn_detector.detect_faces_multiscale(image)
+            if dnn_faces:
+                logger.info(f"DNN detectó {len(dnn_faces)} rostros")
+                return dnn_faces  # Si DNN encuentra rostros, confiar en él
+
+        # 2. Fallback a detección robusta con cascadas
+        cascade_faces = self.detect_faces_robust(image)
+
+        return cascade_faces
+
+    def detect_faces_dnn(self, image: np.ndarray) -> List[Tuple[int, int, int, int]]:
+        """Detección de rostros usando DNN (más precisa)"""
+        try:
+            # Cargar modelo DNN preentrenado de OpenCV
+            modelFile = "models/res10_300x300_ssd_iter_140000.caffemodel"
+            configFile = "models/deploy.prototxt"
+
+            if not os.path.exists(modelFile) or not os.path.exists(configFile):
+                logger.warning("Modelo DNN no encontrado, usando cascadas")
+                return self.detect_faces_robust(image)
+
+            net = cv2.dnn.readNetFromCaffe(configFile, modelFile)
+
+            # Preparar imagen
+            blob = cv2.dnn.blobFromImage(image, 1.0, (300, 300),
+                                         (104.0, 177.0, 123.0))
+            net.setInput(blob)
+            detections = net.forward()
+
+            faces = []
+            h, w = image.shape[:2]
+
+            for i in range(detections.shape[2]):
+                confidence = detections[0, 0, i, 2]
+                if confidence > 0.5:  # Umbral de confianza
+                    box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
+                    (x, y, x2, y2) = box.astype("int")
+                    faces.append((x, y, x2 - x, y2 - y))
+
+            return faces
+        except Exception as e:
+            logger.error(f"Error en detección DNN: {e}")
+            return self.detect_faces_robust(image)
+
+    def _calculate_mahalanobis_distance(self, features1: np.ndarray,
+                                        features2: np.ndarray,
+                                        covariance_matrix: Optional[np.ndarray] = None) -> float:
+        """Calcular distancia de Mahalanobis (considera correlaciones)"""
+        try:
+            if covariance_matrix is None:
+                # Usar matriz identidad si no hay covarianza
+                covariance_matrix = np.eye(len(features1))
+
+            diff = features1 - features2
+            inv_cov = np.linalg.inv(covariance_matrix)
+            distance = np.sqrt(np.dot(np.dot(diff, inv_cov), diff))
+
+            # Normalizar a similitud
+            similarity = 1 / (1 + distance)
+            return similarity
+
+        except Exception as e:
+            logger.warning(f"Error en Mahalanobis: {e}")
+            return 0.0
 
     def preprocess_image(self, image_path: str) -> Optional[np.ndarray]:
         """Preprocesamiento mejorado de imagen"""
@@ -254,7 +343,7 @@ class FacialProcessor:
 
     def extract_enhanced_features(self, image: np.ndarray, face_coords: Tuple[int, int, int, int]) -> Optional[
         np.ndarray]:
-        """Extracción mejorada de características faciales"""
+        """Extracción mejorada de características faciales con métodos avanzados"""
         try:
             x, y, w, h = face_coords
             logger.info(f"Extrayendo características de rostro en: x={x}, y={y}, w={w}, h={h}")
@@ -268,6 +357,9 @@ class FacialProcessor:
 
             face_roi = image[y_exp:y_exp + h_exp, x_exp:x_exp + w_exp]
 
+            # Normalizar iluminación
+            face_roi = self.advanced_extractor.normalize_illumination(face_roi)
+
             # Redimensionar a múltiples tamaños para mejor robustez
             face_128 = cv2.resize(face_roi, (128, 128))
             face_64 = cv2.resize(face_roi, (64, 64))
@@ -276,10 +368,9 @@ class FacialProcessor:
 
             # 1. Características de píxeles normalizadas (256 valores)
             pixel_features = face_128.flatten().astype(np.float32) / 255.0
-            # Usar solo una parte para evitar sobreajuste
             features_list.append(pixel_features[::2][:256])  # Submuestreo
 
-            # 2. Histograma de intensidades (64 bins para reducir dimensionalidad)
+            # 2. Histograma de intensidades (64 bins)
             hist = cv2.calcHist([face_128], [0], None, [64], [0, 256])
             hist_normalized = hist.flatten() / (hist.sum() + 1e-7)
             features_list.append(hist_normalized)
@@ -296,27 +387,43 @@ class FacialProcessor:
             symmetry_features = self._extract_symmetry_features(face_128)
             features_list.append(symmetry_features)
 
+            # 6. Características Gabor (si está habilitado)
+            if settings.USE_GABOR_FEATURES:
+                gabor_features = self.advanced_extractor.extract_gabor_features(face_128)
+                features_list.append(gabor_features)
+
+            # 7. Características ORB (si está habilitado)
+            if settings.USE_ORB_FEATURES:
+                orb_features = self.advanced_extractor.extract_orb_features(face_128)
+                features_list.append(orb_features)
+
+            # 8. Características de bordes (si está habilitado)
+            if settings.USE_EDGE_FEATURES:
+                edge_features = self.advanced_extractor.extract_edge_features(face_128)
+                features_list.append(edge_features)
+
+            # 9. Face Embeddings (si está habilitado)
+            if self.embedding_extractor:
+                embedding = self.embedding_extractor.extract_embedding(face_roi)
+                if embedding is not None:
+                    features_list.append(embedding)
+                else:
+                    # Si falla, agregar vector de ceros
+                    features_list.append(np.zeros(128))
+
             # Concatenar todas las características
             all_features = np.concatenate(features_list)
 
-            # Normalización Z-score para estabilidad (solo si sklearn está disponible)
-            if SKLEARN_AVAILABLE and getattr(settings, 'NORMALIZE_FEATURES', True):
-                try:
-                    scaler = StandardScaler()
-                    features_normalized = scaler.fit_transform(all_features.reshape(-1, 1)).flatten()
-                except:
-                    # Fallback a normalización manual
-                    mean = np.mean(all_features)
-                    std = np.std(all_features)
-                    features_normalized = (all_features - mean) / (std + 1e-7) if std > 0 else all_features
-            else:
-                # Normalización manual simple
+            # Normalización
+            if settings.NORMALIZE_FEATURES:
                 mean = np.mean(all_features)
                 std = np.std(all_features)
-                features_normalized = (all_features - mean) / (std + 1e-7) if std > 0 else all_features
+                if std > 0:
+                    all_features = (all_features - mean) / std
+                    all_features = np.clip(all_features, -3, 3)
 
-            logger.info(f"Características mejoradas extraídas: {len(features_normalized)} valores")
-            return features_normalized
+            logger.info(f"Características extraídas: {len(all_features)} valores")
+            return all_features
 
         except Exception as e:
             logger.error(f"Error extrayendo características mejoradas: {e}")
@@ -552,6 +659,121 @@ class FacialProcessor:
         except Exception as e:
             logger.error(f"Error en comparación mejorada: {e}")
             return self._get_default_comparison(threshold)
+
+    def compare_features_with_voting(self, features1: np.ndarray, features2: np.ndarray,
+                                     threshold: float = 0.70) -> dict:
+        """Comparación con sistema de votación para mayor robustez"""
+        try:
+            votes = []
+            detailed_scores = {}
+
+            # Verificar dimensiones
+            if len(features1) != len(features2):
+                logger.error("Las características no tienen la misma dimensión")
+                return self._get_default_comparison(threshold)
+
+            # Método 1: Similitud coseno
+            if SKLEARN_AVAILABLE:
+                cosine_sim = cosine_similarity([features1], [features2])[0][0]
+            else:
+                dot_product = np.dot(features1, features2)
+                norm_product = np.linalg.norm(features1) * np.linalg.norm(features2)
+                cosine_sim = dot_product / (norm_product + 1e-7)
+
+            votes.append(("cosine", cosine_sim >= threshold))
+            detailed_scores["cosine"] = float(cosine_sim)
+
+            # Método 2: Correlación
+            correlation = np.corrcoef(features1, features2)[0, 1]
+            if np.isnan(correlation):
+                correlation = 0.0
+            corr_vote = abs(correlation) >= threshold
+            votes.append(("correlation", corr_vote))
+            detailed_scores["correlation"] = float(abs(correlation))
+
+            # Método 3: Distancia euclidiana normalizada
+            euclidean_dist = np.linalg.norm(features1 - features2)
+            max_possible_dist = np.sqrt(len(features1) * 4)
+            euclidean_sim = max(0, 1 - (euclidean_dist / max_possible_dist))
+            votes.append(("euclidean", euclidean_sim >= threshold))
+            detailed_scores["euclidean"] = float(euclidean_sim)
+
+            # Método 4: Distancia Manhattan normalizada
+            manhattan_dist = np.sum(np.abs(features1 - features2))
+            max_manhattan_dist = len(features1) * 2
+            manhattan_sim = max(0, 1 - (manhattan_dist / max_manhattan_dist))
+            votes.append(("manhattan", manhattan_sim >= threshold))
+            detailed_scores["manhattan"] = float(manhattan_sim)
+
+            # Método 5: Embeddings (si están disponibles)
+            if self.embedding_extractor and settings.USE_FACE_EMBEDDINGS:
+                # Extraer embeddings de las últimas 128 características (si fueron incluidas)
+                embedding_size = 128
+                if len(features1) >= embedding_size and len(features2) >= embedding_size:
+                    embed1 = features1[-embedding_size:]
+                    embed2 = features2[-embedding_size:]
+                    embedding_sim = self.embedding_extractor.calculate_embedding_distance(embed1, embed2)
+                    votes.append(("embeddings", embedding_sim >= threshold))
+                    detailed_scores["embeddings"] = float(embedding_sim)
+
+            # Conteo de votos
+            positive_votes = sum(1 for _, vote in votes if vote)
+            total_votes = len(votes)
+
+            # Decisión por mayoría
+            min_votes = settings.MIN_VOTES_REQUIRED if settings.USE_VOTING_SYSTEM else (total_votes / 2)
+            is_match = positive_votes >= min_votes
+
+            # Calcular confianza ponderada
+            weights = settings.COMPARISON_WEIGHTS
+            weighted_sum = 0
+            weight_total = 0
+
+            for method, score in detailed_scores.items():
+                if method in weights:
+                    weighted_sum += score * weights[method]
+                    weight_total += weights[method]
+
+            final_confidence = weighted_sum / weight_total if weight_total > 0 else 0
+
+            return {
+                "is_match": bool(is_match),
+                "confidence": float(final_confidence),
+                "voting_confidence": float(positive_votes / total_votes),
+                "votes": dict(votes),
+                "detailed_scores": detailed_scores,
+                "positive_votes": int(positive_votes),
+                "total_votes": int(total_votes),
+                "min_votes_required": int(min_votes),
+                "threshold": float(threshold),
+                "method": "voting_system"
+            }
+
+        except Exception as e:
+            logger.error(f"Error en sistema de votación: {e}")
+            return self._get_default_comparison(threshold)
+
+    def _normalize_illumination(self, image: np.ndarray) -> np.ndarray:
+        """Normalización avanzada de iluminación"""
+        try:
+            # Convertir a LAB
+            lab = cv2.cvtColor(cv2.cvtColor(image, cv2.COLOR_GRAY2BGR),
+                               cv2.COLOR_BGR2LAB)
+            l, a, b = cv2.split(lab)
+
+            # Aplicar CLAHE solo al canal L
+            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+            l_clahe = clahe.apply(l)
+
+            # Recombinar
+            lab_clahe = cv2.merge([l_clahe, a, b])
+            result = cv2.cvtColor(lab_clahe, cv2.COLOR_LAB2BGR)
+
+            return cv2.cvtColor(result, cv2.COLOR_BGR2GRAY)
+
+        except Exception as e:
+            logger.warning(f"Error en normalización: {e}")
+            return image
 
     def _compare_features_basic(self, features1: np.ndarray, features2: np.ndarray, threshold: float = 0.70) -> dict:
         """Comparación básica original"""

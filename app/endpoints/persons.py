@@ -78,27 +78,30 @@ async def register_person(
         processor = FacialProcessor()
 
         if settings.USE_ENHANCED_PROCESSING:
-            # Procesamiento mejorado
-            logger.info("Usando procesamiento mejorado")
+            # Procesamiento mejorado con detección híbrida
+            logger.info("Usando procesamiento mejorado con detección híbrida")
             processed_image = processor.preprocess_image(image_path)
             if processed_image is None:
-                raise HTTPException(status_code=400, detail="Error en preprocesamiento mejorado de la imagen")
+                raise HTTPException(status_code=400, detail="Error en preprocesamiento de la imagen")
 
-            # Detección robusta de rostros
-            faces = processor.detect_faces_robust(processed_image)
+            # Usar detección híbrida (DNN + Cascadas)
+            faces = processor.detect_faces_hybrid(processed_image)
             if not faces:
                 raise HTTPException(status_code=400, detail="No se detectaron rostros en la imagen")
+
+            # Log de método de detección usado
+            logger.info(f"Rostros detectados: {len(faces)}")
 
             # Extracción mejorada de características
             features = processor.extract_enhanced_features(processed_image, faces[0])
             if features is None:
-                raise HTTPException(status_code=400, detail="Error extrayendo características faciales mejoradas")
+                raise HTTPException(status_code=400, detail="Error extrayendo características faciales")
 
-            method = "enhanced"
-            logger.info(f"Características mejoradas extraídas: {len(features)} valores")
+            method = "enhanced_v2"  # Nueva versión con características avanzadas
+            logger.info(f"Características avanzadas extraídas: {len(features)} valores")
 
         else:
-            # Procesamiento tradicional
+            # Procesamiento tradicional (mantener compatibilidad)
             logger.info("Usando procesamiento tradicional")
             processed_image = processor.process_image(image_path)
             if processed_image is None:
@@ -150,7 +153,10 @@ async def register_person(
             "system_info": {
                 "enhanced_processing": settings.USE_ENHANCED_PROCESSING,
                 "feature_method": settings.FEATURE_METHOD,
-                "threshold": settings.DEFAULT_SIMILARITY_THRESHOLD
+                "threshold": settings.DEFAULT_SIMILARITY_THRESHOLD,
+                "dnn_detection": settings.USE_DNN_DETECTION,
+                "face_embeddings": settings.USE_FACE_EMBEDDINGS,
+                "voting_system": settings.USE_VOTING_SYSTEM
             }
         }
 

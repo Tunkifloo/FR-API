@@ -350,83 +350,62 @@ async def _process_recognition_image_enhanced(test_image: UploadFile, person: di
             if processed_image is None:
                 raise HTTPException(status_code=400, detail="Error procesando la imagen de prueba")
 
-            # Detección robusta de rostros
-            faces = processor.detect_faces_robust(processed_image)
+            # Detección híbrida
+            faces = processor.detect_faces_hybrid(processed_image)
             if not faces:
                 raise HTTPException(status_code=400, detail="No se detectaron rostros en la imagen de prueba")
 
-            # Extracción mejorada de características
+            # Extracción mejorada
             test_features = processor.extract_enhanced_features(processed_image, faces[0])
             if test_features is None:
                 raise HTTPException(status_code=400, detail="Error extrayendo características de la imagen de prueba")
 
-            # Comparación mejorada con características almacenadas
+            # Comparación con sistema de votación
             stored_features = np.array(person['caracteristicas'])
             threshold = settings.get_threshold_for_person(person)
 
-            comparison_result = processor.compare_features_enhanced(
-                stored_features,
-                test_features,
-                threshold
-            )
+            if settings.USE_VOTING_SYSTEM:
+                comparison_result = processor.compare_features_with_voting(
+                    stored_features,
+                    test_features,
+                    threshold
+                )
+            else:
+                comparison_result = processor.compare_features_enhanced(
+                    stored_features,
+                    test_features,
+                    threshold
+                )
 
-            # Resultado detallado del sistema mejorado
+            # Resultado detallado
             result = {
-                "similarity": float(comparison_result['similarity']),
-                "cosine_similarity": float(comparison_result['cosine_similarity']),
-                "correlation": float(comparison_result['correlation']),
-                "euclidean_similarity": float(comparison_result['euclidean_similarity']),
-                "manhattan_similarity": float(comparison_result['manhattan_similarity']),
-                "segment_similarity": float(comparison_result['segment_similarity']),
-                "consistency": float(comparison_result['consistency']),
-                "euclidean_distance": float(comparison_result['euclidean_distance']),
-                "manhattan_distance": float(comparison_result['manhattan_distance']),
-                "is_match": bool(comparison_result['is_match']),
-                "threshold": float(comparison_result['threshold']),
-                "adjusted_threshold": float(comparison_result['adjusted_threshold']),
-                "confidence": float(comparison_result['confidence']),
-                "faces_detected": int(len(faces)),
-                "features_compared": int(len(test_features)),
-                "processing_method": "enhanced",
-                "metrics_used": comparison_result['metrics_used']
-            }
-
-        else:
-            # Procesamiento tradicional (mantener compatibilidad)
-            processed_image = processor.process_image(image_path)
-            if processed_image is None:
-                raise HTTPException(status_code=400, detail="Error procesando la imagen de prueba")
-
-            faces = processor.detect_faces(processed_image)
-            if not faces:
-                raise HTTPException(status_code=400, detail="No se detectaron rostros en la imagen de prueba")
-
-            test_features = processor.extract_face_features(processed_image, faces[0])
-            if test_features is None:
-                raise HTTPException(status_code=400, detail="Error extrayendo características de la imagen de prueba")
-
-            # Comparación tradicional
-            stored_features = np.array(person['caracteristicas'])
-            threshold = settings.get_threshold_for_person(person)
-
-            comparison_result = processor.compare_features(
-                stored_features,
-                test_features,
-                threshold
-            )
-
-            # Resultado tradicional
-            result = {
-                "similarity": float(comparison_result['similarity']),
-                "correlation": float(comparison_result['correlation']),
-                "distance": float(comparison_result['distance']),
-                "distance_similarity": float(comparison_result['distance_similarity']),
+                "similarity": float(comparison_result.get('confidence', comparison_result.get('similarity', 0))),
                 "is_match": bool(comparison_result['is_match']),
                 "threshold": float(comparison_result['threshold']),
                 "faces_detected": int(len(faces)),
                 "features_compared": int(len(test_features)),
-                "processing_method": "traditional"
+                "processing_method": "enhanced_v2",
+                "comparison_method": comparison_result.get('method', 'standard')
             }
+
+            # Agregar detalles si es sistema de votación
+            if 'votes' in comparison_result:
+                result.update({
+                    "voting_confidence": float(comparison_result['voting_confidence']),
+                    "votes": comparison_result['votes'],
+                    "detailed_scores": comparison_result['detailed_scores'],
+                    "positive_votes": comparison_result['positive_votes'],
+                    "total_votes": comparison_result['total_votes']
+                })
+            else:
+                # Detalles del sistema estándar
+                result.update({
+                    "cosine_similarity": float(comparison_result.get('cosine_similarity', 0)),
+                    "correlation": float(comparison_result.get('correlation', 0)),
+                    "euclidean_similarity": float(comparison_result.get('euclidean_similarity', 0)),
+                    "manhattan_similarity": float(comparison_result.get('manhattan_similarity', 0)),
+                    "consistency": float(comparison_result.get('consistency', 0))
+                })
 
         return result
 

@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     FEATURE_METHOD: str = "enhanced"  # "enhanced" o "traditional"
 
     # Umbrales adaptativos
-    DEFAULT_SIMILARITY_THRESHOLD: float = 0.70
+    DEFAULT_SIMILARITY_THRESHOLD: float = 0.80
     MIN_THRESHOLD: float = 0.50
     MAX_THRESHOLD: float = 0.90
     ADAPTIVE_THRESHOLD: bool = True
@@ -82,7 +82,7 @@ class Settings(BaseSettings):
 
     # Configuración de comparación
     USE_CONSISTENCY_CHECK: bool = True
-    MIN_CONSISTENCY: float = 0.7
+    MIN_CONSISTENCY: float = 0.8
 
     # Pesos para comparación multi-métrica
     COMPARISON_WEIGHT_COSINE: float = 0.35
@@ -99,6 +99,32 @@ class Settings(BaseSettings):
     # Configuración de estudiantes
     MIN_STUDENT_ID_LENGTH: int = 6
     MAX_STUDENT_ID_LENGTH: int = 20
+
+    # ===== CONFIGURACIÓN DE DETECCIÓN DNN =====
+    USE_DNN_DETECTION: bool = True  # Cambiar a True cuando tengas los modelos
+    DNN_CONFIDENCE_THRESHOLD: float = 0.5
+
+    # ===== CONFIGURACIÓN DE EMBEDDINGS =====
+    USE_FACE_EMBEDDINGS: bool = True  # Cambiar a True cuando tengas el modelo
+    EMBEDDING_WEIGHT: float = 0.30
+
+    # ===== CONFIGURACIÓN DE CARACTERÍSTICAS AVANZADAS =====
+    USE_GABOR_FEATURES: bool = True
+    USE_ORB_FEATURES: bool = True
+    USE_EDGE_FEATURES: bool = True
+    USE_COLOR_FEATURES: bool = True  # Solo si usas imágenes a color
+
+    # ===== CONFIGURACIÓN DE VOTING SYSTEM =====
+    USE_VOTING_SYSTEM: bool = True
+    MIN_VOTES_REQUIRED: int = 3  # De 5 métodos totales
+
+    # ===== PESOS ACTUALIZADOS PARA INCLUIR EMBEDDINGS =====
+    COMPARISON_WEIGHT_COSINE: float = 0.25
+    COMPARISON_WEIGHT_CORRELATION: float = 0.15
+    COMPARISON_WEIGHT_EUCLIDEAN: float = 0.15
+    COMPARISON_WEIGHT_MANHATTAN: float = 0.10
+    COMPARISON_WEIGHT_SEGMENTS: float = 0.05
+    COMPARISON_WEIGHT_EMBEDDINGS: float = 0.30
 
     class Config:
         env_file = ".env"
@@ -122,13 +148,21 @@ class Settings(BaseSettings):
     @property
     def COMPARISON_WEIGHTS(self) -> Dict[str, float]:
         """Obtener pesos de comparación como diccionario"""
-        return {
+        weights = {
             'cosine': self.COMPARISON_WEIGHT_COSINE,
             'correlation': self.COMPARISON_WEIGHT_CORRELATION,
             'euclidean': self.COMPARISON_WEIGHT_EUCLIDEAN,
             'manhattan': self.COMPARISON_WEIGHT_MANHATTAN,
             'segments': self.COMPARISON_WEIGHT_SEGMENTS
         }
+
+        if self.USE_FACE_EMBEDDINGS:
+            weights['embeddings'] = self.COMPARISON_WEIGHT_EMBEDDINGS
+            # Renormalizar pesos para que sumen 1
+            total = sum(weights.values())
+            weights = {k: v / total for k, v in weights.items()}
+
+        return weights
 
     def get_threshold_for_person(self, person_data: Dict[str, Any] = None) -> float:
         """Obtener umbral específico para una persona"""

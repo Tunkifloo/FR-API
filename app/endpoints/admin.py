@@ -5,6 +5,7 @@ from app.database.connection import get_db_connection
 from app.core.utils import get_system_stats, cleanup_temp_files, verify_system_requirements
 from config import settings
 import logging
+from typing import List, Dict, Any
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -299,6 +300,67 @@ async def get_performance_metrics():
         logger.error(f"Error obteniendo métricas de rendimiento: {e}")
         raise HTTPException(status_code=500, detail="Error obteniendo métricas de rendimiento")
 
+
+@router.post("/metrics/analyze")
+async def analyze_metrics(results: List[Dict[str, Any]]):
+    """Analizar métricas de reconocimiento"""
+    try:
+        from app.core.metrics_analyzer import MetricsAnalyzer
+
+        analyzer = MetricsAnalyzer()
+
+        # Agregar resultados
+        for result in results:
+            analyzer.add_recognition_result(
+                is_same_person=result.get("is_same_person"),
+                similarity_score=result.get("similarity_score"),
+                threshold=result.get("threshold", settings.DEFAULT_SIMILARITY_THRESHOLD),
+                method=result.get("method", "standard")
+            )
+
+        # Generar reporte
+        report = analyzer.generate_report()
+
+        return {
+            "analysis": report,
+            "recommendations": _generate_recommendations(report)
+        }
+
+    except Exception as e:
+        logger.error(f"Error analizando métricas: {e}")
+        raise HTTPException(status_code=500, detail="Error analizando métricas")
+
+
+def _generate_recommendations(report: Dict[str, Any]) -> List[str]:
+    """Generar recomendaciones basadas en análisis"""
+    recommendations = []
+
+    # Analizar separación entre clases
+    same_mean = report["similarity_stats"]["same_person"]["mean"]
+    diff_mean = report["similarity_stats"]["different_person"]["mean"]
+    separation = same_mean - diff_mean
+
+    if separation < 0.2:
+        recommendations.append(
+            "Baja separación entre clases. Considerar agregar más características o usar embeddings.")
+
+    # Analizar métricas actuales
+    metrics = report["current_metrics"]
+    if metrics["far"] > 0.05:
+        recommendations.append("Tasa de falsos positivos alta. Incrementar umbral de similitud.")
+
+    if metrics["frr"] > 0.1:
+        recommendations.append("Tasa de falsos negativos alta. Reducir umbral o mejorar calidad de imágenes.")
+
+    # Comparar con óptimos
+    current_f1 = metrics["f1_score"]
+    optimal_f1 = report["optimal_thresholds"]["f1_score"]["metrics"]["f1_score"]
+
+    if optimal_f1 - current_f1 > 0.05:
+        optimal_threshold = report["optimal_thresholds"]["f1_score"]["threshold"]
+        recommendations.append(f"Considerar cambiar umbral a {optimal_threshold:.2f} para mejor F1-score")
+
+    return recommendations
 
 async def _check_data_integrity():
     """Verificar integridad de datos"""

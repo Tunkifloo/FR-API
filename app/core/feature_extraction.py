@@ -3,6 +3,8 @@ import cv2
 from typing import Optional, Tuple
 import logging
 from config import settings
+from app.core.advanced_features import AdvancedFeatureExtractor
+from app.core.face_embeddings import FaceEmbeddingExtractor
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +18,12 @@ class FeatureExtractor:
         self.target_size = getattr(settings, 'TARGET_FEATURE_SIZE', 512)
         self.face_size = getattr(settings, 'FACE_SIZE', (128, 128))
         self.normalize = getattr(settings, 'NORMALIZE_FEATURES', True)
+
+        # Inicializar extractores avanzados
+        self.advanced_extractor = AdvancedFeatureExtractor()
+        self.embedding_extractor = None
+        if settings.USE_FACE_EMBEDDINGS:
+            self.embedding_extractor = FaceEmbeddingExtractor()
 
     def extract_comprehensive_features(self, face_image: np.ndarray, method: Optional[str] = None) -> Optional[
         np.ndarray]:
@@ -36,55 +44,128 @@ class FeatureExtractor:
             logger.error(f"Error extrayendo características: {e}")
             return None
 
-    def _extract_enhanced_features(self, face_image: np.ndarray) -> Optional[np.ndarray]:
-        """Extracción mejorada de características (compatible con FacialProcessor)"""
+    def _extract_gabor_features(self, image: np.ndarray) -> np.ndarray:
+        """Extraer características usando filtros de Gabor"""
         try:
+            gabor_features = []
+
+            # Parámetros de Gabor
+            num_filters = 8
+            ksize = 21
+            sigma = 3.0
+            lambd = 10.0
+            gamma = 0.5
+
+            for theta in np.arange(0, np.pi, np.pi / num_filters):
+                kern = cv2.getGaborKernel((ksize, ksize), sigma, theta,
+                                          lambd, gamma, 0, ktype=cv2.CV_32F)
+                filtered = cv2.filter2D(image, cv2.CV_8UC3, kern)
+
+                # Estadísticas del filtro
+                gabor_features.extend([
+                    np.mean(filtered),
+                    np.std(filtered),
+                    np.var(filtered)
+                ])
+
+            return np.array(gabor_features)
+        except Exception as e:
+            logger.warning(f"Error en Gabor: {e}")
+            return np.zeros(24)
+
+    def _extract_orb_features(self, image: np.ndarray) -> np.ndarray:
+        """Extraer características ORB (Oriented FAST and Rotated BRIEF)"""
+        try:
+            orb = cv2.ORB_create(nfeatures=100)
+            keypoints, descriptors = orb.detectAndCompute(image, None)
+
+            if descriptors is None:
+                return np.zeros(128)
+
+            # Crear histograma de descriptores
+            hist, _ = np.histogram(descriptors.flatten(), bins=128, range=(0, 256))
+            return hist.astype(np.float32) / (hist.sum() + 1e-7)
+
+        except Exception as e:
+            logger.warning(f"Error en ORB: {e}")
+            return np.zeros(128)
+
+    def _extract_enhanced_features(self, face_image: np.ndarray) -> Optional[np.ndarray]:
+        """Extracción mejorada de características con métodos avanzados"""
+        try:
+            # Normalizar iluminación primero
+            face_normalized = self.advanced_extractor.normalize_illumination(face_image)
+
             # Redimensionar a tamaño estándar
-            face_resized = cv2.resize(face_image, self.face_size)
+            face_resized = cv2.resize(face_normalized, self.face_size)
             features_list = []
 
-            # 1. Características de píxeles normalizadas (reducido para optimización)
+            # 1. Características de píxeles normalizadas
             pixel_features = face_resized.flatten().astype(np.float32) / 255.0
-            # Submuestreo inteligente para reducir dimensionalidad
-            pixel_subset = pixel_features[::4][:200]  # Tomar cada 4to pixel, máximo 200
+            pixel_subset = pixel_features[::4][:200]
             features_list.append(pixel_subset)
 
-            # 2. Histograma de intensidades optimizado
+            # 2. Histograma de intensidades
             hist = cv2.calcHist([face_resized], [0], None, [64], [0, 256])
             hist_normalized = hist.flatten() / (hist.sum() + 1e-7)
             features_list.append(hist_normalized)
 
-            # 3. LBP multi-escala para textura
+            # 3. LBP multi-escala
             lbp_features = self._extract_multi_scale_lbp(face_resized)
             features_list.append(lbp_features)
 
-            # 4. Gradientes direccionales (HOG simplificado)
+            # 4. HOG simplificado
             hog_features = self._extract_simple_hog(face_resized)
             features_list.append(hog_features)
 
-            # 5. Características de simetría facial
+            # 5. Simetría facial
             symmetry_features = self._extract_symmetry_features(face_resized)
             features_list.append(symmetry_features)
+
+            # 6. Características Gabor
+            if settings.USE_GABOR_FEATURES:
+                gabor_features = self.advanced_extractor.extract_gabor_features(face_resized)
+                features_list.append(gabor_features)
+
+            # 7. Características ORB
+            if settings.USE_ORB_FEATURES:
+                orb_features = self.advanced_extractor.extract_orb_features(face_resized)
+                features_list.append(orb_features)
+
+            # 8. Características de bordes
+            if settings.USE_EDGE_FEATURES:
+                edge_features = self.advanced_extractor.extract_edge_features(face_resized)
+                features_list.append(edge_features)
+
+            # 9. Características de color
+            if settings.USE_COLOR_FEATURES and len(face_image.shape) == 3:
+                color_features = self.advanced_extractor.extract_color_features(face_image)
+                features_list.append(color_features)
+
+            # 10. Face Embeddings
+            if self.embedding_extractor:
+                embedding = self.embedding_extractor.extract_embedding(face_image)
+                if embedding is not None:
+                    features_list.append(embedding)
+                else:
+                    features_list.append(np.zeros(128))
 
             # Concatenar todas las características
             all_features = np.concatenate(features_list)
 
-            # Normalización opcional
+            # Normalización
             if self.normalize:
-                # Normalización Z-score
                 mean = np.mean(all_features)
                 std = np.std(all_features)
                 if std > 0:
                     all_features = (all_features - mean) / std
+                    all_features = np.clip(all_features, -3, 3)
 
-                # Asegurar que los valores estén en un rango razonable
-                all_features = np.clip(all_features, -3, 3)
-
-            logger.info(f"Características mejoradas extraídas: {len(all_features)} valores")
+            logger.info(f"Características avanzadas extraídas: {len(all_features)} valores")
             return all_features
 
         except Exception as e:
-            logger.error(f"Error en extracción mejorada: {e}")
+            logger.error(f"Error en extracción avanzada: {e}")
             return None
 
     def _extract_traditional_features(self, face_image: np.ndarray) -> Optional[np.ndarray]:
