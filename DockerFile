@@ -1,10 +1,9 @@
-FROM python:3.11-slim
+FROM python:3.13-slim
 
-# Variables de entorno
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Instalar dependencias del sistema para OpenCV
+# Instalar dependencias del sistema
 RUN apt-get update && apt-get install -y \
     libgl1-mesa-glx \
     libglib2.0-0 \
@@ -12,22 +11,22 @@ RUN apt-get update && apt-get install -y \
     libxext6 \
     libxrender-dev \
     libgomp1 \
+    gcc \
+    g++ \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Instalar dependencias Python
+# Actualizar pip y instalar setuptools
+RUN python -m pip install --upgrade pip setuptools wheel
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar código
 COPY . .
 
-# Crear directorios
 RUN mkdir -p uploads models exports json_backup logs
 
-# Exponer puerto
 EXPOSE $PORT
 
-# Comando de inicio
 CMD uvicorn main:app --host 0.0.0.0 --port $PORT
