@@ -120,7 +120,6 @@ class Settings(BaseSettings):
     MIN_VOTES_REQUIRED: int = 3
 
     class Config:
-        env_file = ".env.production.local"
         case_sensitive = False
         # Permitir campos extra para evitar errores
         extra = "ignore"
