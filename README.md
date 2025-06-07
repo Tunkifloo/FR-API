@@ -65,8 +65,8 @@ pip install -r requirements.txt
 
 4. **Configurar variables de entorno**
 ```bash
-cp .env.example .env
-# Editar .env con tus configuraciones
+cp .env.development.local.example .env.development.local
+# Editar .env.development.local con tus configuraciones
 ```
 
 5. **Inicializar base de datos MySQL**

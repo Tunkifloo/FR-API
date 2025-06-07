@@ -100,9 +100,30 @@ class Settings(BaseSettings):
     MIN_STUDENT_ID_LENGTH: int = 6
     MAX_STUDENT_ID_LENGTH: int = 20
 
+    # ===== VARIABLES ADICIONALES DEL .env =====
+    # Detección DNN
+    USE_DNN_DETECTION: bool = True
+    DNN_CONFIDENCE_THRESHOLD: float = 0.5
+
+    # Embeddings
+    USE_FACE_EMBEDDINGS: bool = True
+    EMBEDDING_WEIGHT: float = 0.30
+
+    # Características avanzadas
+    USE_GABOR_FEATURES: bool = True
+    USE_ORB_FEATURES: bool = True
+    USE_EDGE_FEATURES: bool = True
+    USE_COLOR_FEATURES: bool = True
+
+    # Sistema de votación
+    USE_VOTING_SYSTEM: bool = True
+    MIN_VOTES_REQUIRED: int = 3
+
     class Config:
-        env_file = ".env"
+        env_file = ".env.production.local"
         case_sensitive = False
+        # Permitir campos extra para evitar errores
+        extra = "ignore"
 
     @property
     def ALLOWED_EXTENSIONS(self) -> set:
@@ -154,7 +175,9 @@ class Settings(BaseSettings):
             "use_multiple_detectors": self.USE_MULTIPLE_DETECTORS,
             "use_dlib": self.USE_DLIB,
             "face_size": self.FACE_SIZE,
-            "min_image_size": self.MIN_IMAGE_SIZE
+            "min_image_size": self.MIN_IMAGE_SIZE,
+            "use_dnn_detection": self.USE_DNN_DETECTION,
+            "dnn_confidence_threshold": self.DNN_CONFIDENCE_THRESHOLD
         }
 
     def get_feature_config(self) -> Dict[str, Any]:
@@ -165,7 +188,13 @@ class Settings(BaseSettings):
             "use_multi_scale_lbp": self.USE_MULTI_SCALE_LBP,
             "include_symmetry": self.INCLUDE_SYMMETRY_FEATURES,
             "target_size": self.TARGET_FEATURE_SIZE,
-            "face_size": self.FACE_SIZE
+            "face_size": self.FACE_SIZE,
+            "use_face_embeddings": self.USE_FACE_EMBEDDINGS,
+            "embedding_weight": self.EMBEDDING_WEIGHT,
+            "use_gabor_features": self.USE_GABOR_FEATURES,
+            "use_orb_features": self.USE_ORB_FEATURES,
+            "use_edge_features": self.USE_EDGE_FEATURES,
+            "use_color_features": self.USE_COLOR_FEATURES
         }
 
     def get_file_config(self) -> Dict[str, Any]:
@@ -226,16 +255,13 @@ if settings.DEBUG:
         validation = settings.validate_settings()
         if not validation["valid"]:
             import logging
-
             logger = logging.getLogger(__name__)
             logger.warning(f"Problemas en configuración: {validation['issues']}")
         if validation["warnings"]:
             import logging
-
             logger = logging.getLogger(__name__)
             logger.info(f"Advertencias de configuración: {validation['warnings']}")
     except Exception as e:
         import logging
-
         logger = logging.getLogger(__name__)
         logger.warning(f"Error validando configuración: {e}")
