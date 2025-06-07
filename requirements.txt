@@ -1,28 +1,70 @@
-# FastAPI y servidor
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
+# ===== CORE FASTAPI FRAMEWORK =====
+fastapi==0.115.12
+uvicorn[standard]==0.34.3
+starlette==0.46.2
 
-# Base de datos
-sqlalchemy==2.0.23
-pymysql==1.1.0
-cryptography==41.0.7
+# ===== DATABASE CONNECTIVITY =====
+mysql-connector-python==9.3.0
+PyMySQL==1.1.1
+SQLAlchemy==1.4.53
 
-# Validación y configuración
-pydantic==2.5.0
-pydantic-settings==2.1.0
+# ===== CONFIGURATION MANAGEMENT =====
+pydantic==2.11.5
+pydantic-settings==2.9.1
+python-dotenv==1.1.0
 
-# Procesamiento de imágenes
-opencv-python==4.8.1.78
-numpy==1.24.3
-Pillow==10.1.0
-
-# Utilidades
-python-multipart==0.0.6
-python-jose[cryptography]==3.3.0
+# ===== SECURITY AND AUTHENTICATION =====
+python-jose[cryptography]==3.5.0
 passlib[bcrypt]==1.7.4
+cryptography==45.0.3
 
-# Logging y monitoreo
-python-json-logger==2.0.7
+# ===== FILE HANDLING =====
+aiofiles==24.1.0
+python-multipart==0.0.20
 
-# Para compatibilidad con el código existente
-matplotlib==3.7.2
+# ===== COMPUTER VISION AND IMAGE PROCESSING =====
+opencv-python==4.11.0.86
+numpy==1.24.4
+pillow==11.2.1
+
+# ===== MACHINE LEARNING (SISTEMA MEJORADO) =====
+scikit-learn==1.6.1
+scipy==1.13.1
+joblib==1.5.1
+threadpoolctl==3.6.0
+
+# ===== DATA VISUALIZATION =====
+matplotlib==3.9.4
+
+# ===== ADDITIONAL UTILITIES =====
+PyYAML==6.0.2
+
+# ===== DEPENDENCIES AUTOMÁTICAS (instaladas por las anteriores) =====
+# Estas se instalan automáticamente, pero las listamos para referencia
+annotated-types==0.7.0
+anyio==4.9.0
+bcrypt==4.3.0
+cffi==1.17.1
+click==8.1.8
+colorama==0.4.6
+contourpy==1.3.0
+cycler==0.12.1
+ecdsa==0.19.1
+fonttools==4.58.1
+h11==0.16.0
+httptools==0.6.4
+idna==3.10
+kiwisolver==1.4.7
+packaging==25.0
+psutil==7.0.0
+pyasn1==0.6.1
+pycparser==2.22
+pydantic_core==2.33.2
+pyparsing==3.2.3
+python-dateutil==2.9.0.post0
+rsa==4.9.1
+six==1.17.0
+sniffio==1.3.1
+typing_extensions==4.14.0
+watchfiles==1.0.5
+websockets==15.0.1
